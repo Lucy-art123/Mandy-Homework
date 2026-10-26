@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>今日作业</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; padding: 14px 12px 40px;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #f5f6f8; color: #222;
+  }
+  h1 { font-size: 20px; margin: 4px 0 2px; }
+  .date { font-size: 12px; color: #999; margin-bottom: 14px; }
+
+  /* 总进度 */
+  .total-wrap { margin: 0 0 16px; }
+  .total-bar { height: 8px; background: #e6e8eb; border-radius: 4px; overflow: hidden; }
+  .total-fill { height: 100%; width: 0; background: #07c160; border-radius: 4px; transition: width .3s; }
+  .total-text { font-size: 12px; color: #888; margin-top: 5px; text-align: right; }
+
+  /* 科目卡片 */
+  .subject {
+    background: #fff; border-radius: 14px; margin-bottom: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden;
+  }
+  .subject-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 13px 14px; cursor: pointer; user-select: none;
+  }
+  .subject-name { font-size: 16px; font-weight: 600; flex: 1; }
+  .subject-count { font-size: 12px; color: #999; }
+  .chev { width: 18px; height: 18px; transition: transform .2s; color: #bbb; }
+  .subject.collapsed .chev { transform: rotate(-90deg); }
+  .subject.collapsed .subject-body { display: none; }
+
+  .subject-body { border-top: 1px solid #f0f0f0; }
+
+  /* 条目 */
+  .item {
+    display: flex; align-items: flex-start; gap: 11px;
+    padding: 13px 14px; border-bottom: 1px solid #f5f5f5;
+    cursor: pointer; user-select: none;
+  }
+  .item:last-child { border-bottom: none; }
+  .box {
+    flex: 0 0 22px; width: 22px; height: 22px; margin-top: 1px;
+    border: 2px solid #c9ccd1; border-radius: 6px; background: #fff;
+    display: flex; align-items: center; justify-content: center; transition: all .15s;
+  }
+  .box svg { width: 14px; height: 14px; opacity: 0; transform: scale(.6); transition: all .15s; }
+  .item.done .box { background: #07c160; border-color: #07c160; }
+  .item.done .box svg { opacity: 1; transform: scale(1); }
+  .item.done .title { color: #aaa; text-decoration: line-through; }
+  .text { flex: 1; min-width: 0; }
+  .title { font-size: 15px; line-height: 1.45; word-break: break-word; }
+  .tip { font-size: 12.5px; color: #999; margin-top: 3px; line-height: 1.5; }
+  .item.done .tip { color: #c4c4c4; }
+  .del {
+    flex: 0 0 auto; border: none; background: none; color: #ccc;
+    font-size: 18px; padding: 0 4px; cursor: pointer; line-height: 1;
+  }
+  .del:active { color: #f56c6c; }
+
+  /* 添加行 */
+  .add-row { display: flex; gap: 8px; padding: 10px 14px 14px; }
+  .add-row input {
+    flex: 1; border: 1px solid #e2e4e8; border-radius: 8px;
+    padding: 9px 11px; font-size: 14px; outline: none; background: #fafbfc;
+  }
+  .add-row input:focus { border-color: #07c160; background: #fff; }
+  .add-row button {
+    border: none; background: #07c160; color: #fff; border-radius: 8px;
+    padding: 0 16px; font-size: 14px; cursor: pointer;
+  }
+  .add-row button:active { opacity: .8; }
+
+  /* 无作业提示 */
+  .empty { padding: 14px; font-size: 13px; color: #bbb; text-align: center; }
+
+  /* 折叠状态下的“今日无此科作业”按钮 */
+  .skip-btn {
+    margin: 0 14px 14px; width: calc(100% - 28px);
+    border: 1px dashed #d9dce1; background: #fafbfc; color: #888;
+    border-radius: 8px; padding: 8px; font-size: 13px; cursor: pointer;
+  }
+  .skip-btn:active { background: #f0f1f3; }
+
+  .celebrate {
+    display: none; text-align: center; margin: 4px 0 10px;
+    font-size: 15px; color: #07c160; font-weight: 600;
+  }
+  .celebrate.show { display: block; }
+  .footer { text-align: center; font-size: 11px; color: #bbb; margin-top: 22px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+  <h1>今日作业</h1>
+  <div class="date" id="date"></div>
+
+  <div class="total-wrap">
+    <div class="total-bar"><div class="total-fill" id="totalFill"></div></div>
+    <div class="total-text" id="totalText">0 / 0</div>
+  </div>
+
+  <div class="celebrate" id="celebrate">🎉 全部完成！去拿给家长看吧</div>
+
+  <div id="subjects"></div>
+
+  <div class="footer">
+    点科目名可折叠 · 勾选记录只保存在本机，按天自动清空<br>
+    换设备不会同步
+  </div>
+
+<script>
+(function () {
+  var today = new Date();
+  var dateStr = today.getFullYear() + "-" +
+    String(today.getMonth() + 1).padStart(2, "0") + "-" +
+    String(today.getDate()).padStart(2, "0");
+
+  // 日期显示
+  var week = ["日","一","二","三","四","五","六"][today.getDay()];
+  document.getElementById("date").textContent =
+    dateStr + " 星期" + week;
+
+  var KEY = "hw_" + dateStr;   // 按天隔离
+
+  // 默认作业（可自行修改）
+  var DEFAULT = {
+    english: {
+      name: "英语",
+      items: [
+        { t: "听写订正", d: "错词圈出，每个抄 2 遍" },
+        { t: "背 U3 短语", d: "读 3 遍 → 合书说一遍 → 明天听写" },
+        { t: "课课练 56、57", d: "" },
+        { t: "复背 U3 Ct、St", d: "合书复述给家长听" }
+      ]
+    },
+    math: {
+      name: "数学",
+      items: []
+    },
+    chinese: {
+      name: "语文",
+      items: []
+    }
+  };
+
+  var ORDER = ["chinese", "math", "english"];
+
+  function load() {
+    try {
+      var s = JSON.parse(localStorage.getItem(KEY));
+      if (s && s.subjects) return s;
+    } catch (e) {}
+    // 首次：复制默认
+    var init = { collapsed: {}, done: {}, custom: {} };
+    ORDER.forEach(function (k) {
+      init.custom[k] = DEFAULT[k].items.map(function (x) { return { t: x.t, d: x.d }; });
+    });
+    return init;
+  }
+  function save(s) {
+    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {}
+  }
+
+  var state = load();
+
+  var subjectsEl = document.getElementById("subjects");
+  var totalFill = document.getElementById("totalFill");
+  var totalText = document.getElementById("totalText");
+  var celebrate = document.getElementById("celebrate");
+
+  function checkSvg() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>';
+  }
+
+  function render() {
+    subjectsEl.innerHTML = "";
+    var grandTotal = 0, grandDone = 0;
+
+    ORDER.forEach(function (key) {
+      var sub = DEFAULT[key];
+      var items = state.custom[key] || [];
+      var collapsed = !!state.collapsed[key];
+      var doneMap = state.done[key] || {};
+
+      var subDone = 0;
+      items.forEach(function (_, i) { if (doneMap[i]) subDone++; });
+      grandTotal += items.length;
+      grandDone += subDone;
+
+      var card = document.createElement("div");
+      card.className = "subject" + (collapsed ? " collapsed" : "");
+
+      // 头部
+      var head = document.createElement("div");
+      head.className = "subject-head";
+      head.innerHTML =
+        '<div class="subject-name">' + sub.name + '</div>' +
+        '<div class="subject-count">' + (items.length ? subDone + "/" + items.length : "无作业") + '</div>' +
+        '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+        'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+      head.addEventListener("click", function () {
+        state.collapsed[key] = !state.collapsed[key];
+        save(state); render();
+      });
+      card.appendChild(head);
+
+      // 主体
+      var body = document.createElement("div");
+      body.className = "subject-body";
+
+      if (items.length === 0) {
+        var empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "老师还没发作业，或今天没有这一科";
+        body.appendChild(empty);
+      }
+
+      items.forEach(function (it, i) {
+        var row = document.createElement("div");
+        row.className = "item" + (doneMap[i] ? " done" : "");
+        row.innerHTML =
+          '<div class="box">' + checkSvg() + '</div>' +
+          '<div class="text"><div class="title">' + esc(it.t) + '</div>' +
+          (it.d ? '<div class="tip">' + esc(it.d) + '</div>' : '') + '</div>' +
+          '<button class="del" title="删除">×</button>';
+
+        // 勾选
+        row.addEventListener("click", function (e) {
+          if (e.target.closest(".del")) return;
+          state.done[key] = state.done[key] || {};
+          state.done[key][i] = !state.done[key][i];
+          save(state); render();
+        });
+
+        // 删除
+        row.querySelector(".del").addEventListener("click", function (e) {
+          e.stopPropagation();
+          state.custom[key].splice(i, 1);
+          // 重建 done 映射
+          var nd = {};
+          var old = state.done[key] || {};
+          for (var j = 0; j < state.custom[key].length + 1; j++) {
+            if (j < i && old[j]) nd[j] = true;
+            else if (j > i && old[j]) nd[j - 1] = true;
+          }
+          state.done[key] = nd;
+          save(state); render();
+        });
+
+        body.appendChild(row);
+      });
+
+      // 添加行
+      var add = document.createElement("div");
+      add.className = "add-row";
+      add.innerHTML =
+        '<input type="text" placeholder="添加' + sub.name + '作业…" />' +
+        '<button>添加</button>';
+      var input = add.querySelector("input");
+      var btn = add.querySelector("button");
+      function doAdd() {
+        var v = input.value.trim();
+        if (!v) return;
+        state.custom[key].push({ t: v, d: "" });
+        input.value = "";
+        save(state); render();
+      }
+      btn.addEventListener("click", doAdd);
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") doAdd();
+      });
+      body.appendChild(add);
+
+      // 折叠时显示“今日无此科作业”
+      if (collapsed && items.length > 0) {
+        var skip = document.createElement("button");
+        skip.className = "skip-btn";
+        skip.textContent = "今日无此科作业（清空本项）";
+        skip.addEventListener("click", function (e) {
+          e.stopPropagation();
+          if (!confirm("确定今天没有" + sub.name + "作业？将清空本科目。")) return;
+          state.custom[key] = [];
+          state.done[key] = {};
+          save(state); render();
+        });
+        body.appendChild(skip);
+      }
+
+      card.appendChild(body);
+      subjectsEl.appendChild(card);
+    });
+
+    // 总进度
+    var pct = grandTotal ? Math.round(grandDone / grandTotal * 100) : 0;
+    totalFill.style.width = pct + "%";
+    totalText.textContent = grandDone + " / " + grandTotal;
+    celebrate.classList.toggle("show", grandTotal > 0 && grandDone === grandTotal);
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
